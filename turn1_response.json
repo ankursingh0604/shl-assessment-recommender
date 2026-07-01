@@ -1,0 +1,21 @@
+{
+  "reply": "For a graduate management trainee scheme, I recommend the following assessments: Graduate 8.0 Job Focused Assessment for cognitive abilities, OPQ Candidate Plus Report for personality, and Graduate Scenarios for situational judgement. These assessments are designed for recent graduates and will provide a comprehensive view of their abilities.",
+  "recommendations": [
+    {
+      "name": "Graduate 8.0 Job Focused Assessment",
+      "url": "https://www.shl.com/products/product-catalog/view/graduate-8-0-job-focused-assessment-4228/",
+      "test_type": "P,B"
+    },
+    {
+      "name": "Graduate Scenarios",
+      "url": "https://www.shl.com/solutions/products/product-catalog/view/graduate-scenarios/",
+      "test_type": "B"
+    },
+    {
+      "name": "OPQ Candidate Plus Report",
+      "url": "https://www.shl.com/products/product-catalog/view/opq-candidate-plus-report/",
+      "test_type": "P"
+    }
+  ],
+  "end_of_conversation": false
+}
