@@ -14,6 +14,8 @@ Two responsibilities live here, not just "call the API":
    is the difference between "happy path only" and handling the realistic
    failure mode of LLMs occasionally emitting malformed JSON under load.
 """
+from dotenv import load_dotenv
+load_dotenv()
 import json
 import os
 from typing import Type, TypeVar

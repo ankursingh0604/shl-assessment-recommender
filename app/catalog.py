@@ -1,19 +1,8 @@
 """
 Catalog store + retrieval.
-
-Why BM25 instead of embeddings: the catalog is ~350-400 items, and queries
+BM25 instead of embeddings: the catalog is ~350-400 items, and queries
 are keyword-dense ("Java", "Spring", "HIPAA", "contact centre agents") rather
-than abstract paraphrases. BM25 gives exact, explainable, zero-cost recall on
-that kind of query and needs no vector DB, no embedding API key, and no cold
-start. The known weakness is pure semantic paraphrase ("people who handle
-incoming money" not matching "Accounts Payable") — we partially cover that
-gap upstream, in the LLM query-expansion step in graph.py, which turns vague
-facts into multiple concrete keyword queries before they ever hit BM25.
-
-Every recommendation the agent returns is required to come from a candidate
-set this module produced — never from free LLM generation — which is what
-actually enforces "never recommend anything outside the SHL catalog" (a
-prompt instruction alone is not a guarantee; a programmatic filter is).
+than abstract paraphrases.
 """
 import json
 import re
@@ -87,15 +76,22 @@ class Catalog:
 
     def multi_search(self, queries: list[str], top_k_each: int = 8, top_k_total: int = 20) -> list[CatalogEntry]:
         """Run several queries (e.g. one per extracted skill/constraint) and
-        merge, deduplicated, preserving best-first order across all queries.
-        Used so a single vague user message doesn't lose a skill's recall to
-        whichever keyword happened to dominate a single combined query."""
+        merge, deduplicated. Used so a single vague user message doesn't lose
+        a skill's recall to whichever keyword happened to dominate a single
+        combined query.
+        """
+        per_query_hits = [self.search(q, top_k=top_k_each) for q in queries]
         seen, merged = set(), []
-        for q in queries:
-            for e in self.search(q, top_k=top_k_each):
-                if e.url not in seen:
-                    seen.add(e.url)
-                    merged.append(e)
+        max_len = max((len(h) for h in per_query_hits), default=0)
+        for rank in range(max_len):
+            for hits in per_query_hits:
+                if rank < len(hits):
+                    e = hits[rank]
+                    if e.url not in seen:
+                        seen.add(e.url)
+                        merged.append(e)
+            if len(merged) >= top_k_total:
+                break
         return merged[:top_k_total]
 
     def get_by_url(self, url: str) -> CatalogEntry | None:
@@ -103,13 +99,36 @@ class Catalog:
 
     def get_by_name(self, name: str) -> CatalogEntry | None:
         return self._by_name_lower.get(name.lower())
-
-    def fuzzy_find(self, name_query: str) -> CatalogEntry | None:
-        """Best-effort lookup for compare-mode, where the user names a product
-        casually ('OPQ', 'GSA') rather than with its exact catalog title."""
         name_query_l = name_query.lower().strip()
         if name_query_l in self._by_name_lower:
             return self._by_name_lower[name_query_l]
+
+        prefix_hits = [
+            (entry, next(w for w in entry.name.lower().split() if w.startswith(name_query_l)))
+            for entry in self.entries
+            if any(w.startswith(name_query_l) for w in entry.name.lower().split())
+        ]
+        if prefix_hits:
+            # Prefer the matching word that carries a version/model code
+            # (e.g. 'opq32r') over a bare acronym repeated in report-variant
+            # names (e.g. 'OPQ User Report', 'OPQ Leadership Report' — all
+            # of which also start with 'opq' but are variants, not the base
+            # instrument). Catalogs like this consistently mark the actual
+            # instrument with a trailing digit in its code; report variants
+            # don't have one. Among remaining ties, prefer the shortest name.
+            def _rank(pair):
+                entry, matched_word = pair
+                has_digit = any(ch.isdigit() for ch in matched_word)
+                return (0 if has_digit else 1, len(entry.name))
+            return min(prefix_hits, key=_rank)[0]
+
+        stopwords = {"and", "of", "the", "for", "in", "a", "an"}
+        for entry in self.entries:
+            words = [w for w in re.findall(r"[a-zA-Z0-9]+", entry.name) if w.lower() not in stopwords]
+            acronym = "".join(w[0] for w in words if w).lower()
+            if acronym == name_query_l:
+                return entry
+
         hits = self.search(name_query, top_k=1)
         return hits[0] if hits else None
 
@@ -130,8 +149,6 @@ class Catalog:
         text_lower = text.lower()
         found = []
         for entry in self.entries:
-            # Require reasonably long names to avoid short-name false
-            # positives matching common English words inside sentences.
             if len(entry.name) >= 6 and entry.name.lower() in text_lower:
                 found.append(entry)
         return found

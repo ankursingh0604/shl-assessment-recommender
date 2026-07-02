@@ -53,12 +53,28 @@ def extract_trace_turns(path: str) -> tuple[list[str], list[str]]:
     return user_turns, names
 
 
+def _normalize_name(name: str) -> str:
+    """Loose match: lowercase, collapse whitespace, strip trailing version-ish
+    punctuation. Trace tables and your catalog may format names slightly
+    differently (e.g. extra spacing, trailing '(New)'), so exact string
+    equality would undercount recall for reasons that have nothing to do
+    with retrieval quality."""
+    name = name.lower().strip()
+    name = re.sub(r"\s+", " ", name)
+    return name
+
+
 def run_schema_check(base_url: str, traces_dir: str):
     files = sorted(glob.glob(os.path.join(traces_dir, "*.md")))
     total_turns, failures = 0, []
+    recall_scores = []  # (trace_name, recall, matched, expected_total)
+    no_expected_shortlist = []
+
     for path in files:
-        user_turns, _ = extract_trace_turns(path)
+        print(f"  running {os.path.basename(path)}...", flush=True)
+        user_turns, expected_names = extract_trace_turns(path)
         messages = []
+        last_recs = []
         for turn_idx, user_msg in enumerate(user_turns, 1):
             messages.append({"role": "user", "content": user_msg})
             total_turns += 1
@@ -79,9 +95,26 @@ def run_schema_check(base_url: str, traces_dir: str):
             for r in recs:
                 if not {"name", "url", "test_type"} <= r.keys():
                     failures.append(f"{path} turn {turn_idx}: malformed recommendation item: {r}")
+            if os.environ.get("EVAL_DEBUG"):
+                names_preview = [r.get("name") for r in recs]
+                print(f"    turn {turn_idx}: {len(recs)} recs -> {names_preview}")
+            if recs:
+                last_recs = recs  # track most recent non-empty shortlist
             messages.append({"role": "assistant", "content": body.get("reply", "")})
             if turn_idx >= 8:
                 break
+
+        # --- Recall-proxy: compare final shortlist we got back against the
+        # trace's own final shortlist (labeled ground truth is not
+        # available to us; this is a sanity signal, not the real score). ---
+        if not expected_names:
+            no_expected_shortlist.append(os.path.basename(path))
+            continue
+        expected_set = {_normalize_name(n) for n in expected_names}
+        got_set = {_normalize_name(r.get("name", "")) for r in last_recs}
+        matched = len(expected_set & got_set)
+        recall = matched / len(expected_set)
+        recall_scores.append((os.path.basename(path), recall, matched, len(expected_set)))
 
     print(f"\nSchema check: {total_turns} turns across {len(files)} traces")
     if failures:
@@ -90,6 +123,16 @@ def run_schema_check(base_url: str, traces_dir: str):
             print(" -", f)
         sys.exit(1)
     print("All hard-eval checks passed (schema, URL field presence, turn cap, <=10 recs).")
+
+    if recall_scores:
+        print(f"\nRecall@10 (proxy, vs. each trace's own final shortlist — NOT real ground truth):")
+        for name, recall, matched, total in sorted(recall_scores, key=lambda x: x[1]):
+            print(f"  {name}: {recall:.2f}  ({matched}/{total} matched)")
+        mean_recall = sum(r for _, r, _, _ in recall_scores) / len(recall_scores)
+        print(f"  MEAN: {mean_recall:.3f} across {len(recall_scores)} traces")
+    if no_expected_shortlist:
+        print(f"\n  (skipped recall for {len(no_expected_shortlist)} trace(s) with no parsed shortlist table: "
+              f"{', '.join(no_expected_shortlist)})")
 
 
 if __name__ == "__main__":

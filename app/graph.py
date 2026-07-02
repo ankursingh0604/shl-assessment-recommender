@@ -19,6 +19,7 @@ becoming the response's `recommendations`. An LLM that hallucinates a URL
 gets silently corrected, not trusted.
 """
 import os
+import logging
 from typing import Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field
@@ -27,6 +28,8 @@ from langgraph.graph import StateGraph, END
 from .catalog import Catalog, CatalogEntry
 from .llm import call_structured
 from .prompts import PARSE_SYSTEM, COMPOSE_SYSTEM
+
+logger = logging.getLogger("shl_agent")
 
 MAX_TURNS = 8
 
@@ -69,6 +72,7 @@ def build_graph(catalog: Catalog):
                 schema=ParseResult,
             )
         except Exception:
+            logger.exception("parse_node: call_structured failed, falling back to clarify")
             # If the parse stage itself fails (provider hiccup etc.), fail
             # safe into a clarifying question rather than crashing the request.
             result = ParseResult(action="clarify",
@@ -129,6 +133,7 @@ def build_graph(catalog: Catalog):
         try:
             result = call_structured(system=COMPOSE_SYSTEM, user=user_block, schema=ComposeResult)
         except Exception:
+            logger.exception("compose_node: call_structured failed, falling back to error reply")
             result = ComposeResult(
                 reply="Sorry, I hit an issue putting that together. Could you rephrase or give me a bit more detail?",
                 selected_urls=[], end_of_conversation=False,

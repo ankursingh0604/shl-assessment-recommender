@@ -56,7 +56,7 @@ def health():
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    get_catalog()  # ensures warm even if startup hook didn't fire (e.g. tests)
+    get_catalog()  
     if len(req.messages) > MAX_TURNS:
         # Hard protocol violation from the caller's side — still respond with
         # valid schema rather than raising, since "never break schema" beats
