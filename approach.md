@@ -68,4 +68,4 @@ implementation speed and catching failure modes not yet tested for, not for the 
 Stack
 FastAPI + LangGraph + Groq (Llama 3.3 70B, OpenAI-compatible API) + BM25 (rank_bm25) + Pydantic for structured LLM
 output. Deployed on Render (free tier), kept warm via a 10-minute external health-check ping to avoid cold-start timeouts
-during evaluation.
+during evaluation
