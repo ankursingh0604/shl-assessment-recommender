@@ -65,7 +65,7 @@ correctness, drafting/fixing the local eval harness, and deployment troubleshoot
 diagnosis). Core agent design (the graph structure, the grounding-filter enforcement approach, the BM25-over-embeddings
 tradeoff) and the retrieval bug fixes themselves were reasoned through and directed manually; AI tooling was used for
 implementation speed and catching failure modes not yet tested for, not for the underlying design decisions.
-Stack
+Stack:
 FastAPI + LangGraph + Groq (Llama 3.3 70B, OpenAI-compatible API) + BM25 (rank_bm25) + Pydantic for structured LLM
 output. Deployed on Render (free tier), kept warm via a 10-minute external health-check ping to avoid cold-start timeouts
 during evaluation
